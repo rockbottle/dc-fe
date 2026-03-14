@@ -2,139 +2,95 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Lock, Mail, Eye, EyeOff, ShieldCheck, Zap } from "lucide-react";
-import Link from "next/link";
+import { useLoginMutation } from "@/state/api";
+import { Lock, Mail, Loader2, ShieldCheck, AlertCircle } from "lucide-react";
 
 const LoginPage = () => {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [login, { isLoading }] = useLoginMutation();
   const router = useRouter();
-  const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    
-    // Simulate authentication delay
-    setTimeout(() => {
-      router.push("/"); // Redirect to dashboard
-    }, 1500);
+    setErrorMessage("");
+
+    try {
+      // Execute login mutation
+      const response = await login({ username, password }).unwrap();
+      
+      // Persist the session data returned by authentication.py
+      localStorage.setItem("auth_token", response.access_token);
+      localStorage.setItem("username", response.username);
+      localStorage.setItem("user_id", response.user_id);
+
+      // Redirect to the dashboard upon success
+      router.push("/dashboard");
+    } catch (err: any) {
+      // Catch 401/404 errors from FastAPI
+      const msg = err.data?.detail || "Authentication failed. Please check backend connection.";
+      setErrorMessage(typeof msg === "string" ? msg : "Invalid credentials");
+    }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 p-4 transition-colors">
-      {/* BACKGROUND DECORATION */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-blue-500/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-[10%] -right-[10%] w-[40%] h-[40%] bg-indigo-500/10 rounded-full blur-3xl" />
-      </div>
-
-      <div className="w-full max-w-md z-10 animate-in fade-in zoom-in-95 duration-500">
-        {/* LOGO SECTION */}
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white mb-4 shadow-xl shadow-blue-500/20">
-            <Zap size={32} fill="white" />
+    <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-[#080b12] p-4">
+      <div className="w-full max-w-md bg-white dark:bg-gray-800 rounded-3xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="p-8">
+          <div className="flex flex-col items-center mb-10">
+            <div className="p-4 bg-blue-600 rounded-2xl shadow-lg mb-4">
+              <ShieldCheck className="text-white w-8 h-8" />
+            </div>
+            <h1 className="text-2xl font-black dark:text-white uppercase tracking-tight">DCIM Portal</h1>
+            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Authorized Access Only</p>
           </div>
-          <h1 className="text-3xl font-black dark:text-white uppercase tracking-tighter">
-            Nexus<span className="text-blue-600">Admin</span>
-          </h1>
-          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-[0.3em] mt-2">
-            Infrastructure Access Portal
-          </p>
-        </div>
 
-        {/* LOGIN CARD */}
-        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-8 rounded-[2.5rem] shadow-2xl shadow-gray-200/50 dark:shadow-none">
-          <form onSubmit={handleLogin} className="space-y-6">
-            {/* EMAIL */}
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest ml-1">
-                Authorized Email
-              </label>
-              <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-blue-500 transition-colors">
-                  <Mail size={18} />
-                </div>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {errorMessage && (
+              <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-bold rounded-xl border border-red-100 dark:border-red-800">
+                <AlertCircle size={16} /> {errorMessage}
+              </div>
+            )}
+
+            <div>
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Username</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                 <input
-                  type="email"
+                  type="text"
                   required
-                  placeholder="name@company.com"
-                  className="w-full pl-12 pr-4 py-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white font-bold outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                  placeholder="Enter your username"
                 />
               </div>
             </div>
 
-            {/* PASSWORD */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center ml-1">
-                <label className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">
-                  Secure Password
-                </label>
-                <Link href="#" className="text-[10px] font-black text-blue-600 uppercase tracking-widest hover:underline">
-                  Forgot?
-                </Link>
-              </div>
-              <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-blue-500 transition-colors">
-                  <Lock size={18} />
-                </div>
+            <div>
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Password</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                 <input
-                  type={showPassword ? "text" : "password"}
+                  type="password"
                   required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                   placeholder="••••••••"
-                  className="w-full pl-12 pr-12 py-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white font-bold outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
               </div>
             </div>
 
-            {/* REMEMBER ME */}
-            <div className="flex items-center gap-3 ml-1">
-              <input 
-                type="checkbox" 
-                id="remember"
-                className="w-5 h-5 rounded-lg border-2 border-gray-300 dark:border-gray-700 bg-transparent checked:bg-blue-600 transition-all cursor-pointer appearance-none checked:border-blue-600 relative after:content-['✓'] after:absolute after:text-white after:text-xs after:font-bold after:left-1 after:top-0 after:hidden checked:after:block"
-              />
-              <label htmlFor="remember" className="text-xs font-bold text-gray-500 dark:text-gray-400 cursor-pointer">
-                Trust this device for 30 days
-              </label>
-            </div>
-
-            {/* LOGIN BUTTON */}
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-400 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-[0.2em] shadow-lg shadow-blue-500/30 transition-all active:scale-[0.98] flex items-center justify-center gap-3"
+              className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2 uppercase text-xs tracking-widest active:scale-95 disabled:opacity-50"
             >
-              {isLoading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Authenticating...
-                </>
-              ) : (
-                <>
-                  <ShieldCheck size={18} /> Establish Connection
-                </>
-              )}
+              {isLoading ? <Loader2 className="animate-spin" size={18} /> : "Initialize Session"}
             </button>
           </form>
-        </div>
-
-        {/* SYSTEM STATUS FOOTER */}
-        <div className="mt-8 flex justify-center items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Auth Server: Online</span>
-          </div>
-          <div className="w-1 h-1 bg-gray-300 dark:bg-gray-700 rounded-full" />
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">v4.2.0-stable</span>
-          </div>
         </div>
       </div>
     </div>
