@@ -2,18 +2,20 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { useAppSelector } from "@/app/redux";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { 
   useGetInventoryQuery, 
   useGetMyDetailsQuery, 
   useDeleteInventoryMutation, 
-  useCreateInventoryMutation 
+  useCreateInventoryMutation,
+  useUpdateInventoryMutation 
 } from "@/state/api";
 import { 
   Plus, Trash2, Edit, MoreHorizontal, 
   X, Server, Building2, Save, AlertTriangle, Loader2, RefreshCcw, Info, Network, Zap, Clock
 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import CreateInventoryModal from "../(components)/CreateInventoryModal";
 
 // --- ENHANCED GAUGE COMPONENT ---
 const InventoryGauge = ({ title, value, max, color }: any) => {
@@ -64,6 +66,8 @@ const InventoryGauge = ({ title, value, max, color }: any) => {
 
 const Inventory = () => {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const searchTarget = searchParams.get("search") || "";
   
   // API Hooks
   const { data: devices = [], isLoading, isFetching, refetch, dataUpdatedAt } = useGetInventoryQuery();
@@ -71,17 +75,27 @@ const Inventory = () => {
   
   const [deleteDevice] = useDeleteInventoryMutation();
   const [createDevice, { isLoading: isCreating }] = useCreateInventoryMutation();
+  const [updateDevice, { isLoading: isUpdating }] = useUpdateInventoryMutation();
 
   // UI State
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, deviceId: 0, deviceName: "" });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
+  // Search Logic Integration
+  const filteredInventory = React.useMemo(() => {
+    return devices.filter((device) =>
+      device.device_hostname.toLowerCase().includes(searchTarget.toLowerCase()) ||
+      device.device_model.toLowerCase().includes(searchTarget.toLowerCase())
+    );
+  }, [devices, searchTarget]);
+
   // Calculated Resource Totals
   const totals = {
-    assets: devices.length,
+    assets: devices.reduce((acc, d) => acc + (d.rack_uspace || 0), 0),
     power: devices.reduce((acc, d) => acc + (d.device_power || 0), 0),
     nports: devices.reduce((acc, d) => acc + (d.device_nports || 0), 0),
     sports: devices.reduce((acc, d) => acc + (d.device_sports || 0), 0),
@@ -94,11 +108,7 @@ const Inventory = () => {
     sports: myDetails?.sport || 0,
   };
 
-  const [formData, setFormData] = useState({
-    device_type: "Server", device_hostname: "", device_model: "", device_serial: "",
-    rack_name: "", rack_unit: "", rack_uspace: 1, device_power: 0,
-    device_nports: 0, device_sports: 0, power_status: true, device_status: true,
-  });
+  const [editingDevice, setEditingDevice] = useState<any>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -108,19 +118,41 @@ const Inventory = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [openMenuId]);
 
-  const handleCreateAsset = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateAsset = async (formData: any) => {
     setErrorMessage(null);
     try {
       await createDevice({...formData}).unwrap();
       setIsModalOpen(false);
-      setFormData({
-        device_type: "Server", device_hostname: "", device_model: "", device_serial: "",
-        rack_name: "", rack_unit: "", rack_uspace: 1, device_power: 0,
-        device_nports: 0, device_sports: 0, power_status: true, device_status: true,
-      });
     } catch (err: any) {
-      setErrorMessage(`Provisioning Failed: ${err?.data?.message || "Check backend"}`);
+      const errorDescription = err?.data?.detail || err?.data?.message || "Check backend connection";
+      setErrorMessage(`Provisioning Failed: ${errorDescription}`);
+    }
+  };
+
+  const handleUpdateAsset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+    try {
+      const cleanedData = {
+        device_type: editingDevice.device_type,
+        device_hostname: editingDevice.device_hostname,
+        device_model: editingDevice.device_model,
+        device_serial: editingDevice.device_serial,
+        rack_name: editingDevice.rack_name,
+        rack_unit: editingDevice.rack_unit,
+        rack_uspace: editingDevice.rack_uspace,
+        device_power: editingDevice.device_power,
+        device_nports: editingDevice.device_nports,
+        device_sports: editingDevice.device_sports,
+        power_status: editingDevice.power_status,
+        device_status: editingDevice.device_status,
+      };
+      await updateDevice({ id: editingDevice.id, data: cleanedData }).unwrap();
+      setIsUpdateModalOpen(false);
+      setEditingDevice(null);
+    } catch (err: any) {
+      const errorDescription = err?.data?.detail || err?.data?.message || "Check backend connection";
+      setErrorMessage(`Update Failed: ${errorDescription}`);
     }
   };
 
@@ -173,23 +205,13 @@ const Inventory = () => {
           <div className="flex items-center gap-1.5 mt-2 text-gray-400 dark:text-gray-500">
             <Clock size={12} className={isFetching ? "animate-pulse text-blue-500" : ""} />
             <span className="text-[10px] font-bold uppercase tracking-widest">
-              {isFetching ? (
-                "Syncing..."
-              ) : dataUpdatedAt > 0 ? (
-                `Last Sync: ${new Date(dataUpdatedAt).toLocaleTimeString()}`
-              ) : (
-                "Data Synchronized"
-              )}
+              {isFetching ? "Syncing..." : dataUpdatedAt > 0 ? `Last Sync: ${new Date(dataUpdatedAt).toLocaleTimeString()}` : "Data Synchronized"}
             </span>
           </div>
         </div>
         
         <div className="flex gap-3">
-          <button 
-            onClick={() => refetch()} 
-            disabled={isFetching}
-            className="group flex items-center gap-2 px-4 py-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg border border-gray-200 dark:border-gray-700 transition-all"
-          >
+          <button onClick={() => refetch()} disabled={isFetching} className="group flex items-center gap-2 px-4 py-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg border border-gray-200 dark:border-gray-700 transition-all">
             <RefreshCcw size={18} className={isFetching ? "animate-spin" : "group-hover:rotate-180 transition-transform duration-500"} />
             <span className="text-[10px] font-bold uppercase">Refresh</span>
           </button>
@@ -221,7 +243,7 @@ const Inventory = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-              {devices.map((device) => (
+              {filteredInventory.map((device) => (
                 <tr key={device.id} className="group hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-colors">
                   <td className="px-6 py-5">
                     <div className="flex items-center gap-3">
@@ -233,8 +255,9 @@ const Inventory = () => {
                     </div>
                   </td>
                   <td className="px-6 py-5 text-center">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-full text-xs font-bold border border-emerald-100 dark:border-emerald-800">
-                      <Building2 size={12} /> {device.rack_name || "N/A"} (U{device.rack_unit})
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-900/40 text-[#3e2723] dark:text-[#ffffff] rounded-full text-xs font-bold border border-emerald-100 dark:border-emerald-700/50 shadow-sm">
+                      <Building2 size={12} className="text-[#3e2723] dark:text-[#ffffff]" />
+                      {device.rack_name || "N/A"} (U{device.rack_unit})
                     </div>
                   </td>
                   <td className="px-6 py-5 text-center font-bold dark:text-gray-300">{device.rack_uspace}U</td>
@@ -255,8 +278,8 @@ const Inventory = () => {
                     </button>
                     {openMenuId === device.id && (
                       <div ref={menuRef} className="absolute right-6 top-14 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl z-[100] py-2">
-                        <button onClick={() => router.push(`/inventory/update/${device.id}`)} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
-                          <Edit size={16} className="text-blue-500" /> Update Config
+                        <button onClick={() => { setEditingDevice(device); setIsUpdateModalOpen(true); setOpenMenuId(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+                          <Edit size={16} className="text-blue-500" /> Update Asset
                         </button>
                         <div className="h-px bg-gray-100 dark:bg-gray-700 my-1 mx-2"></div>
                         <button onClick={() => setDeleteModal({ isOpen: true, deviceId: device.id, deviceName: device.device_hostname })} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
@@ -272,16 +295,24 @@ const Inventory = () => {
         </div>
       </div>
 
-      {/* 5. ADD ASSET MODAL */}
-      {isModalOpen && (
+      {/* 5. INTEGRATED CREATE MODAL COMPONENT */}
+      <CreateInventoryModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        onCreate={handleCreateAsset} 
+        isLoading={isCreating}
+      />
+
+      {/* 6. UPDATE ASSET MODAL */}
+      {isUpdateModalOpen && editingDevice && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-md">
           <div className="relative bg-white dark:bg-gray-800 w-full max-w-4xl rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             <div className="flex justify-between items-center p-6 border-b dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
-              <h2 className="text-xl font-black dark:text-white uppercase tracking-tight">Provision New Asset</h2>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full dark:text-gray-400 transition-colors"><X size={24} /></button>
+              <h2 className="text-xl font-black dark:text-white uppercase tracking-tight">Update Asset: {editingDevice.device_hostname}</h2>
+              <button onClick={() => setIsUpdateModalOpen(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full dark:text-gray-400 transition-colors"><X size={24} /></button>
             </div>
             
-            <form onSubmit={handleCreateAsset} className="p-8 max-h-[75vh] overflow-y-auto">
+            <form onSubmit={handleUpdateAsset} className="p-8 max-h-[75vh] overflow-y-auto">
               {errorMessage && (
                 <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl flex items-center gap-3">
                   <AlertTriangle size={20} />
@@ -296,25 +327,25 @@ const Inventory = () => {
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-gray-500 uppercase block mb-1.5 ml-1">Device Type</label>
-                  <select className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white outline-none"
-                    value={formData.device_type} onChange={(e) => setFormData({...formData, device_type: e.target.value})}>
+                  <select className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white outline-none font-bold"
+                    value={editingDevice.device_type} onChange={(e) => setEditingDevice({...editingDevice, device_type: e.target.value})}>
                     <option>Server</option><option>Switch</option><option>Storage</option><option>Router</option><option>Firewall</option>
                   </select>
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-gray-500 uppercase block mb-1.5 ml-1">Hostname</label>
-                  <input required type="text" placeholder="DC1-SRV-01" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white font-bold outline-none"
-                    value={formData.device_hostname} onChange={(e) => setFormData({...formData, device_hostname: e.target.value})} />
+                  <input required type="text" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white font-bold outline-none"
+                    value={editingDevice.device_hostname} onChange={(e) => setEditingDevice({...editingDevice, device_hostname: e.target.value})} />
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-gray-500 uppercase block mb-1.5 ml-1">Model Name</label>
-                  <input required type="text" placeholder="e.g. Dell PowerEdge R740" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white font-bold outline-none"
-                    value={formData.device_model} onChange={(e) => setFormData({...formData, device_model: e.target.value})} />
+                  <input required type="text" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white font-bold outline-none"
+                    value={editingDevice.device_model} onChange={(e) => setEditingDevice({...editingDevice, device_model: e.target.value})} />
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-gray-500 uppercase block mb-1.5 ml-1">Serial Number</label>
-                  <input required type="text" placeholder="SN-XXXX" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white font-mono outline-none"
-                    value={formData.device_serial} onChange={(e) => setFormData({...formData, device_serial: e.target.value})} />
+                  <input required type="text" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white font-mono outline-none"
+                    value={editingDevice.device_serial} onChange={(e) => setEditingDevice({...editingDevice, device_serial: e.target.value})} />
                 </div>
 
                 <div className="md:col-span-3 border-b dark:border-gray-700 pb-2 flex items-center gap-2 mb-2 mt-4">
@@ -323,18 +354,18 @@ const Inventory = () => {
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-gray-500 uppercase block mb-1.5 ml-1">Rack Name</label>
-                  <input type="text" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white"
-                    value={formData.rack_name} onChange={(e) => setFormData({...formData, rack_name: e.target.value})} />
+                  <input type="text" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white font-bold"
+                    value={editingDevice.rack_name} onChange={(e) => setEditingDevice({...editingDevice, rack_name: e.target.value})} />
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-gray-500 uppercase block mb-1.5 ml-1">Rack Unit</label>
-                  <input type="text" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white"
-                    value={formData.rack_unit} onChange={(e) => setFormData({...formData, rack_unit: e.target.value})} />
+                  <input type="text" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white font-bold"
+                    value={editingDevice.rack_unit} onChange={(e) => setEditingDevice({...editingDevice, rack_unit: e.target.value})} />
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-gray-500 uppercase block mb-1.5 ml-1">U-Space Height</label>
-                  <input type="number" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white"
-                    value={formData.rack_uspace} onChange={(e) => setFormData({...formData, rack_uspace: parseInt(e.target.value) || 1})} />
+                  <input type="number" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white font-bold"
+                    value={editingDevice.rack_uspace} onChange={(e) => setEditingDevice({...editingDevice, rack_uspace: parseInt(e.target.value) || 1})} />
                 </div>
 
                 <div className="md:col-span-3 border-b dark:border-gray-700 pb-2 flex items-center gap-2 mb-2 mt-4">
@@ -343,18 +374,18 @@ const Inventory = () => {
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-gray-500 uppercase block mb-1.5 ml-1">Network Ports</label>
-                  <input type="number" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white"
-                    value={formData.device_nports} onChange={(e) => setFormData({...formData, device_nports: parseInt(e.target.value) || 0})} />
+                  <input type="number" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white font-bold"
+                    value={editingDevice.device_nports} onChange={(e) => setEditingDevice({...editingDevice, device_nports: parseInt(e.target.value) || 0})} />
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-gray-500 uppercase block mb-1.5 ml-1">SAN Ports</label>
-                  <input type="number" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white"
-                    value={formData.device_sports} onChange={(e) => setFormData({...formData, device_sports: parseInt(e.target.value) || 0})} />
+                  <input type="number" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white font-bold"
+                    value={editingDevice.device_sports} onChange={(e) => setEditingDevice({...editingDevice, device_sports: parseInt(e.target.value) || 0})} />
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-gray-500 uppercase block mb-1.5 ml-1">Power Consumption (W)</label>
-                  <input type="number" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white"
-                    value={formData.device_power} onChange={(e) => setFormData({...formData, device_power: parseInt(e.target.value) || 0})} />
+                  <input type="number" className="w-full p-3 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl dark:text-white font-bold"
+                    value={editingDevice.device_power} onChange={(e) => setEditingDevice({...editingDevice, device_power: parseInt(e.target.value) || 0})} />
                 </div>
 
                 <div className="md:col-span-3 border-b dark:border-gray-700 pb-2 flex items-center gap-2 mb-2 mt-4">
@@ -365,43 +396,34 @@ const Inventory = () => {
                 <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border dark:border-gray-700">
                   <div>
                     <span className="text-[10px] font-black text-gray-500 uppercase block mb-0.5">Power Supply</span>
-                    <span className="text-xs font-bold dark:text-white">{formData.power_status ? "Redundant On" : "Off / Disconnected"}</span>
+                    <span className="text-xs font-bold dark:text-white">{editingDevice.power_status ? "Redundant On" : "Off / Disconnected"}</span>
                   </div>
-                  <button 
-                    type="button"
-                    onClick={() => setFormData({...formData, power_status: !formData.power_status})}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${formData.power_status ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'}`}
-                  >
-                    <span className={`${formData.power_status ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`} />
+                  <button type="button" onClick={() => setEditingDevice({...editingDevice, power_status: !editingDevice.power_status})} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${editingDevice.power_status ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                    <span className={`${editingDevice.power_status ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`} />
                   </button>
                 </div>
 
                 <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border dark:border-gray-700">
                   <div>
                     <span className="text-[10px] font-black text-gray-500 uppercase block mb-0.5">Network Status</span>
-                    <span className="text-xs font-bold dark:text-white">{formData.device_status ? "Active / Online" : "Maintenance Mode"}</span>
+                    <span className="text-xs font-bold dark:text-white">{editingDevice.device_status ? "Active / Online" : "Maintenance Mode"}</span>
                   </div>
-                  <button 
-                    type="button"
-                    onClick={() => setFormData({...formData, device_status: !formData.device_status})}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${formData.device_status ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}
-                  >
-                    <span className={`${formData.device_status ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`} />
+                  <button type="button" onClick={() => setEditingDevice({...editingDevice, device_status: !editingDevice.device_status})} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${editingDevice.device_status ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                    <span className={`${editingDevice.device_status ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`} />
                   </button>
                 </div>
               </div>
 
               <div className="flex gap-4 mt-12">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-4 border dark:border-gray-700 rounded-xl font-bold dark:text-gray-300 transition-all hover:bg-gray-50">Discard</button>
-                <button type="submit" disabled={isCreating} className="flex-1 py-4 bg-blue-600 text-white rounded-xl font-black shadow-xl flex items-center justify-center gap-2 uppercase text-[10px] tracking-widest transition-all hover:bg-blue-700 disabled:opacity-50">
-                  {isCreating ? <Loader2 className="animate-spin" size={20} /> : <><Save size={20} /> Finalize Provisioning</>}
+                <button type="button" onClick={() => setIsUpdateModalOpen(false)} className="flex-1 py-4 border dark:border-gray-700 rounded-xl font-bold dark:text-gray-300 transition-all hover:bg-gray-50">Discard</button>
+                <button type="submit" disabled={isUpdating} className="flex-1 py-4 bg-[#3e2723] text-white rounded-xl font-black shadow-xl flex items-center justify-center gap-2 uppercase text-[10px] tracking-widest transition-all hover:opacity-90 disabled:opacity-50">
+                  {isUpdating ? <Loader2 className="animate-spin" size={20} /> : <><Save size={20} /> Save Asset Changes</>}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-
     </div>
   );
 };

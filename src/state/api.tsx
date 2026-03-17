@@ -41,7 +41,7 @@ export interface User {
 /* --- BASE API CONFIG --- */
 
 const baseQuery = fetchBaseQuery({
-  baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000",
+  baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000",
   prepareHeaders: (headers) => {
     const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
     if (token) {
@@ -94,7 +94,7 @@ export const api = createApi({
 
     updateInventory: build.mutation<{ message: string }, { id: number; data: Partial<Device> }>({
       query: ({ id, data }) => ({
-        url: `/inventory/update?id=${id}`,
+        url: `/inventory/update/?id=${id}`,
         method: "PUT",
         body: data,
       }),

@@ -1,31 +1,40 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useEffect, useState } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { useAppSelector } from "@/app/redux";
-import { RefreshCcw, Clock } from "lucide-react";
+import { 
+  useGetInventoryQuery, 
+  useGetMyDetailsQuery 
+} from "@/state/api";
+import { RefreshCcw, Clock, Loader2, HardDrive, Zap, Network, Database, Box, CheckCircle2 } from "lucide-react";
 
-// --- REUSABLE GAUGE COMPONENT ---
+// --- COMPACT GAUGE COMPONENT ---
 interface GaugeProps {
   title: string;
   value: number;
   max: number;
   color: string;
   unit?: string;
-  size?: "large" | "small";
+  icon: React.ReactNode;
   isRefreshing?: boolean;
 }
 
-const GaugeChart = ({ title, value, max, color, unit = "", size = "small", isRefreshing }: GaugeProps) => {
+const GaugeChart = ({ title, value, max, color, unit = "", icon, isRefreshing }: GaugeProps) => {
   const isDarkMode = useAppSelector((state) => state.global.isDarkMode);
-  const data = [{ value: value }, { value: max - value }];
+  const safeMax = max > 0 ? max : 1;
+  const data = [{ value: value }, { value: Math.max(0, safeMax - value) }];
 
   return (
-    <div className={`bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col items-center justify-center transition-all duration-500 ${isRefreshing ? "scale-95 opacity-50" : "scale-100 opacity-100"}`}>
-      <h3 className={`text-gray-500 dark:text-gray-400 font-semibold mb-2 uppercase tracking-wider ${size === "large" ? "text-lg" : "text-xs"}`}>
-        {title}
-      </h3>
-      <div className={`w-full ${size === "large" ? "h-64" : "h-32"} relative`}>
+    <div className={`bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col transition-all duration-300 ${isRefreshing ? "opacity-40 scale-[0.98]" : "opacity-100"}`}>
+      <div className="flex items-center gap-2 mb-2">
+        <div className="p-1.5 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-500">
+          {icon}
+        </div>
+        <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{title}</h3>
+      </div>
+
+      <div className="w-full h-32 relative">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
@@ -34,96 +43,169 @@ const GaugeChart = ({ title, value, max, color, unit = "", size = "small", isRef
               cy="100%"
               startAngle={180}
               endAngle={0}
-              innerRadius="70%"
+              innerRadius="82%" 
               outerRadius="100%"
               dataKey="value"
-              animationDuration={1000}
+              stroke="none"
+              animationDuration={800}
             >
               <Cell key="cell-0" fill={color} />
-              <Cell key="cell-1" fill={isDarkMode ? "#374151" : "#e5e7eb"} />
+              <Cell key="cell-1" fill={isDarkMode ? "#111827" : "#f9fafb"} />
             </Pie>
           </PieChart>
         </ResponsiveContainer>
-        <div className="absolute inset-0 flex items-end justify-center pb-2">
-          <span className={`${size === "large" ? "text-5xl" : "text-2xl"} font-bold dark:text-white`}>
-            {value}{unit}
+        <div className="absolute inset-0 flex items-end justify-center pb-1">
+          <span className="text-2xl font-black dark:text-white leading-none">
+            {value.toLocaleString()}<span className="text-[10px] ml-0.5 text-gray-400 font-bold">{unit}</span>
           </span>
         </div>
       </div>
-      <p className="text-xs text-gray-400 mt-2">Capacity: {max}{unit}</p>
+
+      <div className="mt-3 pt-3 border-t border-gray-50 dark:border-gray-700 flex justify-between items-center">
+        <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tight">Limit: {max.toLocaleString()} {unit}</span>
+        <div className="text-[9px] font-black px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 uppercase">
+          {Math.round((value / safeMax) * 100)}%
+        </div>
+      </div>
     </div>
   );
 };
 
-// --- MAIN DASHBOARD PAGE ---
 const Dashboard = () => {
-  const [lastUpdated, setLastUpdated] = useState(new Date().toLocaleTimeString());
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [syncTime, setSyncTime] = useState<string>("");
 
-  const handleRefresh = () => {
-    setIsRefreshing(true);
-    // Simulate an API call
-    setTimeout(() => {
-      setLastUpdated(new Date().toLocaleTimeString());
-      setIsRefreshing(false);
-    }, 800);
-  };
+  const { 
+    data: devices = [], 
+    isLoading: isInvLoading, 
+    isFetching: isInvFetching, 
+    refetch: refetchInv, 
+    dataUpdatedAt: invUpdatedAt 
+  } = useGetInventoryQuery();
+
+  const { 
+    data: myDetails, 
+    isLoading: isDetLoading, 
+    isFetching: isDetFetching, 
+    refetch: refetchDetails,
+    dataUpdatedAt: detUpdatedAt
+  } = useGetMyDetailsQuery();
+
+  const isRefreshing = isInvFetching || isDetFetching;
+  const hasData = devices.length > 0 || myDetails;
+
+  // Improved Timestamp Logic
+  useEffect(() => {
+    const latest = Math.max(invUpdatedAt || 0, detUpdatedAt || 0);
+    if (latest > 0) {
+      setSyncTime(new Date(latest).toLocaleTimeString());
+    } else if (hasData && !isRefreshing) {
+      // Fallback: if data is here but RTK hasn't set the timestamp yet
+      setSyncTime(new Date().toLocaleTimeString());
+    }
+  }, [invUpdatedAt, detUpdatedAt, hasData, isRefreshing]);
+
+  const metrics = useMemo(() => ({
+    current: {
+      devices: devices.length,
+      uspace: devices.reduce((acc, d) => acc + (parseInt(d.rack_uspace) || 0), 0),
+      power: devices.reduce((acc, d) => acc + (d.device_power || 0), 0),
+      nports: devices.reduce((acc, d) => acc + (d.device_nports || 0), 0),
+      sports: devices.reduce((acc, d) => acc + (d.device_sports || 0), 0),
+    },
+    limits: {
+      devices: 100, 
+      uspace: myDetails?.uspace || 42,
+      power: myDetails?.dcpower || 10000,
+      nports: myDetails?.nport || 200,
+      sports: myDetails?.sport || 48,
+    }
+  }), [devices, myDetails]);
+
+  if (isInvLoading || isDetLoading) return (
+    <div className="flex flex-col items-center justify-center h-screen gap-4">
+      <Loader2 className="animate-spin text-blue-600" size={32} />
+      <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Initial Sync...</h2>
+    </div>
+  );
 
   return (
-    <div className="flex flex-col gap-6 pt-4">
-      {/* HEADER SECTION */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-        <div>
-          <h1 className="text-xl font-bold dark:text-white">Inventory Metrics</h1>
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <Clock className="w-4 h-4" />
-            <span>Last checked: {lastUpdated}</span>
+    <div className="max-w-[1200px] mx-auto flex flex-col gap-4 pt-2 pb-10 animate-in fade-in duration-500">
+      
+      {/* HEADER */}
+      <div className="flex items-center justify-between bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-lg font-black dark:text-white uppercase tracking-tighter leading-none">System Utilization</h1>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <Clock size={12} className={isRefreshing ? "animate-pulse text-blue-500" : "text-gray-400"} />
+              <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">
+                Last Refreshed: {syncTime || "Syncing..."}
+              </span>
+            </div>
+            {syncTime && !isRefreshing && (
+              <div className="flex items-center gap-1 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded text-[8px] font-black text-green-600 dark:text-green-400 uppercase tracking-tighter">
+                <CheckCircle2 size={10} />
+                DATA SYNCED
+              </div>
+            )}
           </div>
         </div>
         <button 
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-          className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:bg-gray-400"
+          onClick={() => { refetchInv(); refetchDetails(); }}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50"
         >
-          <RefreshCcw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
-          {isRefreshing ? "Refreshing..." : "Refresh Data"}
+          <RefreshCcw size={14} className={isRefreshing ? "animate-spin" : ""} />
+          {isRefreshing ? "Syncing" : "Refresh"}
         </button>
       </div>
 
-      {/* TOP SECTION: Large Device Chart */}
+      {/* HARDWARE INVENTORY (Fixed Limit: 100) */}
       <div className="w-full">
         <GaugeChart 
-          title="Number of Devices" 
-          value={742} 
-          max={1000} 
+          title="Hardware Inventory" 
+          value={metrics.current.devices} 
+          max={metrics.limits.devices} 
+          unit="Units"
           color="#3b82f6" 
-          size="large"
+          icon={<HardDrive size={16} />}
           isRefreshing={isRefreshing}
         />
       </div>
 
-      {/* BOTTOM SECTION: 3 Smaller Charts */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-10">
+      {/* RESOURCE GRID */}
+      <div className="grid grid-cols-2 gap-4">
         <GaugeChart 
-          title="Total Power" 
-          value={45} 
-          max={100} 
+          title="Occupied Rack Space" 
+          value={metrics.current.uspace} 
+          max={metrics.limits.uspace} 
+          unit="U"
+          color="#8b5cf6" 
+          icon={<Box size={16} />}
+          isRefreshing={isRefreshing}
+        />
+        <GaugeChart 
+          title="Total Power Load" 
+          value={metrics.current.power} 
+          max={metrics.limits.power} 
+          unit="W"
           color="#ef4444" 
-          unit="kW"
+          icon={<Zap size={16} />}
           isRefreshing={isRefreshing}
         />
         <GaugeChart 
-          title="Network Ports" 
-          value={6.2} 
-          max={10} 
+          title="Network Port Usage" 
+          value={metrics.current.nports} 
+          max={metrics.limits.nports} 
           color="#10b981" 
+          icon={<Network size={16} />}
           isRefreshing={isRefreshing}
         />
         <GaugeChart 
-          title="SAN Ports" 
-          value={128} 
-          max={256} 
+          title="SAN Port Usage" 
+          value={metrics.current.sports} 
+          max={metrics.limits.sports} 
           color="#f59e0b" 
+          icon={<Database size={16} />}
           isRefreshing={isRefreshing}
         />
       </div>
