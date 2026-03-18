@@ -1,15 +1,35 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-// Hooks come from your redux store config
 import { useAppSelector, useAppDispatch } from "@/app/redux"; 
-// The actual action/logic comes from your slice file
 import { setIsDarkMode } from "@/state"; 
 
 import { 
-  User, Shield, Database, Monitor, 
+  Shield, Database, Monitor, 
   Save, RefreshCw, FileText, Lock, Trash2, AlertOctagon 
 } from "lucide-react";
+
+// --- TYPES ---
+interface TabButtonProps {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}
+
+interface SettingsSelectProps {
+  label: string;
+  icon: React.ReactNode;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}
+
+interface SystemSettings {
+  refreshInterval: string;
+  reportFormat: string;
+  permissions: string;
+}
 
 const Settings = () => {
   const dispatch = useAppDispatch();
@@ -18,13 +38,12 @@ const Settings = () => {
   const [mounted, setMounted] = useState(false);
 
   // Form State
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState<SystemSettings>({
     refreshInterval: "30s",
     reportFormat: "PDF",
     permissions: "Admin",
   });
 
-  // Prevent hydration mismatch for components using local state/time
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -94,14 +113,14 @@ const Settings = () => {
                   label="Refresh Interval" 
                   icon={<RefreshCw size={14} />}
                   value={settings.refreshInterval}
-                  onChange={(v: string) => setSettings({...settings, refreshInterval: v})}
+                  onChange={(v) => setSettings({...settings, refreshInterval: v})}
                   options={["Manual", "15s", "30s", "1m", "5m"]}
                 />
                 <SettingsSelect 
                   label="Default Report Format" 
                   icon={<FileText size={14} />}
                   value={settings.reportFormat}
-                  onChange={(v: string) => setSettings({...settings, reportFormat: v})}
+                  onChange={(v) => setSettings({...settings, reportFormat: v})}
                   options={["PDF", "CSV", "JSON"]}
                 />
               </div>
@@ -139,7 +158,7 @@ const Settings = () => {
                 label="Assigned Role" 
                 icon={<Lock size={14} />}
                 value={settings.permissions}
-                onChange={(v: string) => setSettings({...settings, permissions: v})}
+                onChange={(v) => setSettings({...settings, permissions: v})}
                 options={["Viewer", "Operator", "Admin"]}
               />
             </div>
@@ -160,7 +179,7 @@ const SectionHeader = ({ title, description }: { title: string; description: str
   </div>
 );
 
-const TabButton = ({ active, onClick, icon, label }: any) => (
+const TabButton = ({ active, onClick, icon, label }: TabButtonProps) => (
   <button 
     onClick={onClick}
     className={`flex items-center gap-3 px-5 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${
@@ -173,7 +192,7 @@ const TabButton = ({ active, onClick, icon, label }: any) => (
   </button>
 );
 
-const SettingsSelect = ({ label, icon, value, options, onChange }: any) => (
+const SettingsSelect = ({ label, icon, value, options, onChange }: SettingsSelectProps) => (
   <div className="space-y-3">
     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2 italic">
       {icon} {label}
@@ -183,7 +202,7 @@ const SettingsSelect = ({ label, icon, value, options, onChange }: any) => (
       onChange={(e) => onChange(e.target.value)}
       className="w-full p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white font-bold outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
     >
-      {options.map((opt: string) => (
+      {options.map((opt) => (
         <option key={opt} value={opt}>{opt}</option>
       ))}
     </select>

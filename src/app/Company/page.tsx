@@ -4,7 +4,6 @@ import React, { useState, useRef, useEffect } from "react";
 import { 
   useGetMyTeamQuery, 
   useCreateUserMutation, 
-  useUpdateUserMutation, 
   useDeleteUserMutation,
   useGetCurrentUserQuery 
 } from "@/state/api";
@@ -13,21 +12,27 @@ import {
   MoreVertical, X, Edit2, Trash2, Globe, Loader2, Key
 } from "lucide-react";
 
+// --- NEW: Define the User Interface ---
+interface User {
+  username: string;
+  email: string;
+  company_name?: string;
+}
+
 const Company = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [editingUser, setEditingUser] = useState<any>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // --- API HOOKS ---
-  const { data: team = [], isLoading, isFetching, refetch } = useGetMyTeamQuery();
+  const { data: team = [], isLoading, refetch } = useGetMyTeamQuery();
   const { data: currentUserData } = useGetCurrentUserQuery();
   const [createUser] = useCreateUserMutation();
-  const [updateUser] = useUpdateUserMutation();
   const [deleteUser] = useDeleteUserMutation();
 
-  const currentUser = currentUserData?.[0];
+  // FIX: Accessing the user safely based on your API structure
+  const currentUser = Array.isArray(currentUserData) ? currentUserData[0] : currentUserData;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -39,7 +44,7 @@ const Company = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const filteredUsers = team.filter((user) =>
+  const filteredUsers = team.filter((user: User) =>
     user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
     user.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -58,7 +63,7 @@ const Company = () => {
       await createUser(newUser).unwrap();
       setIsModalOpen(false);
       refetch();
-    } catch (err) {
+    } catch (_err) { // FIX: Prefixed with underscore to satisfy linter
       alert("Failed to create user. Check if username/email already exists.");
     }
   };
@@ -68,7 +73,7 @@ const Company = () => {
       try {
         await deleteUser().unwrap();
         window.location.href = "/login";
-      } catch (err) {
+      } catch (_err) { // FIX: Prefixed with underscore
         alert("Delete operation failed.");
       }
     }
@@ -79,6 +84,9 @@ const Company = () => {
       <Loader2 className="animate-spin text-blue-500" size={32} />
     </div>
   );
+
+  const inputStyles = "w-full mt-1 p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white focus:ring-2 focus:ring-blue-500 outline-none font-bold";
+  const labelStyles = "text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1";
 
   return (
     <div className="flex flex-col gap-6 pb-20 relative animate-in fade-in duration-500">
@@ -128,7 +136,7 @@ const Company = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-            {filteredUsers.map((user) => (
+            {filteredUsers.map((user: User) => (
               <tr key={user.email} className="hover:bg-gray-50/80 dark:hover:bg-gray-700/40 transition-colors group">
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-3">
@@ -168,7 +176,7 @@ const Company = () => {
                     >
                       <button 
                         className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-800 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors font-bold"
-                        onClick={() => { setOpenMenuId(null); /* Link to an edit modal if desired */ }}
+                        onClick={() => { setOpenMenuId(null); }}
                       >
                         <Edit2 size={16} className="text-blue-500" /> Update Profile
                       </button>
@@ -203,25 +211,25 @@ const Company = () => {
             
             <form className="space-y-4" onSubmit={handleCreateUser}>
               <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Username</label>
-                <input name="username" required type="text" placeholder="johndoe" className="w-full mt-1 p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white focus:ring-2 focus:ring-blue-500 outline-none font-bold" />
+                <label className={labelStyles}>Username</label>
+                <input name="username" required type="text" placeholder="johndoe" className={inputStyles} />
               </div>
               <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Email Address</label>
-                <input name="email" required type="email" placeholder="john@company.com" className="w-full mt-1 p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white focus:ring-2 focus:ring-blue-500 outline-none font-bold" />
+                <label className={labelStyles}>Email Address</label>
+                <input name="email" required type="email" placeholder="john@company.com" className={inputStyles} />
               </div>
               <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Temporary Password</label>
+                <label className={labelStyles}>Temporary Password</label>
                 <div className="relative">
                   <Key size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input name="password" required type="password" placeholder="••••••••" className="w-full pl-10 pr-3 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white focus:ring-2 focus:ring-blue-500 outline-none font-bold" />
+                  <input name="password" required type="password" placeholder="••••••••" className={`${inputStyles} pl-10`} />
                 </div>
               </div>
               <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Assign Company</label>
+                <label className={labelStyles}>Assign Company</label>
                 <div className="relative mt-1">
                   <Building2 size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input name="company_name" readOnly defaultValue={currentUser?.company_name} className="w-full pl-10 pr-3 py-3 bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-500 dark:text-gray-400 outline-none font-bold cursor-not-allowed" />
+                  <input name="company_name" readOnly defaultValue={currentUser?.company_name} className={`${inputStyles} pl-10 text-gray-500 dark:text-gray-400 cursor-not-allowed`} />
                 </div>
               </div>
               <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-xl font-black shadow-lg shadow-blue-500/20 mt-4 uppercase text-xs tracking-widest transition-all active:scale-[0.98]">

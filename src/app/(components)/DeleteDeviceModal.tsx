@@ -31,7 +31,7 @@ const DeleteDeviceModal = ({ isOpen, onClose, onConfirm, deviceName }: Props) =>
           {/* Body */}
           <div className="relative p-6 flex-auto">
             <p className="text-gray-600 dark:text-gray-400 leading-relaxed">
-              Are you sure you want to delete <span className="font-bold text-gray-900 dark:text-white">"{deviceName}"</span>? 
+              Are you sure you want to delete <span className="font-bold text-gray-900 dark:text-white">&quot;{deviceName}&quot;</span>?
               This action cannot be undone and will remove all associated metric history.
             </p>
           </div>

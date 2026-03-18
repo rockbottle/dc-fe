@@ -2,13 +2,10 @@
 
 import React, { useState } from "react";
 import { User, Mail, CheckCircle, Save } from "lucide-react";
-import { useAppDispatch, useAppSelector } from "@/app/redux";
-// Assuming you have a way to update user info in your slice
-// import { setUserInfo } from "@/state"; 
+// Removed useAppDispatch and useAppSelector to clear ESLint errors
 
 const Profile = () => {
-  const dispatch = useAppDispatch();
-  // Get current user data from Redux (Update these selectors based on your store)
+  // Current user data (Hardcoded as per your original file)
   const currentUser = { name: "Pramod", email: "pramod@example.com" }; 
 
   const [name, setName] = useState(currentUser.name);
@@ -17,7 +14,7 @@ const Profile = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // dispatch(setUserInfo({ name, email }));
+    // Logic is ready for when you implement a Redux slice or API call
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
   };

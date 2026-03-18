@@ -1,40 +1,79 @@
 "use client";
 
-import React, { useState } from "react";
-import { X, Server, Save, Loader2, Info, Building2, Network, Zap } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { X, Save, Loader2, Info, Building2, Network, Zap, AlertCircle } from "lucide-react";
+
+// --- TYPES & INTERFACES ---
+interface InventoryFormData {
+  device_type: string;
+  device_hostname: string;
+  device_model: string;
+  device_serial: string;
+  rack_name: string;
+  rack_unit: string;
+  rack_uspace: number;
+  device_power: number;
+  device_nports: number;
+  device_sports: number;
+  power_status: boolean;
+  device_status: boolean;
+}
+
+interface FastAPIError {
+  data?: {
+    detail?: string;
+  };
+}
 
 type CreateInventoryModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (formData: any) => Promise<void>;
+  onCreate: (formData: InventoryFormData) => Promise<void>;
   isLoading: boolean;
 };
 
-const CreateInventoryModal = ({ isOpen, onClose, onCreate, isLoading }: CreateInventoryModalProps) => {
-  const initialFormState = {
-    device_type: "Server",
-    device_hostname: "",
-    device_model: "",
-    device_serial: "",
-    rack_name: "",
-    rack_unit: "",
-    rack_uspace: 1,
-    device_power: 0,
-    device_nports: 0,
-    device_sports: 0,
-    power_status: true,
-    device_status: true,
-  };
+// --- FIX: Move outside component to solve useEffect dependency error ---
+const initialFormState: InventoryFormData = {
+  device_type: "Server",
+  device_hostname: "",
+  device_model: "",
+  device_serial: "",
+  rack_name: "",
+  rack_unit: "",
+  rack_uspace: 1,
+  device_power: 0,
+  device_nports: 0,
+  device_sports: 0,
+  power_status: true,
+  device_status: true,
+};
 
-  const [formData, setFormData] = useState(initialFormState);
+const CreateInventoryModal = ({ isOpen, onClose, onCreate, isLoading }: CreateInventoryModalProps) => {
+  const [formData, setFormData] = useState<InventoryFormData>(initialFormState);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setErrorMsg(null);
+      setFormData(initialFormState);
+    }
+  }, [isOpen]); // initialFormState is now stable because it's outside the function
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await onCreate(formData);
-    // Reset form only on success (handled by parent usually, but safe to keep here)
-    setFormData(initialFormState);
+    setErrorMsg(null); 
+    
+    try {
+      await onCreate(formData);
+      setFormData(initialFormState);
+    } catch (err: unknown) {
+      // FIX: Cast to FastAPIError instead of 'any' to satisfy ESLint
+      const errorData = err as FastAPIError;
+      const detailedError = errorData?.data?.detail || "An unexpected provisioning error occurred.";
+      setErrorMsg(detailedError);
+    }
   };
 
   const inputStyles = "w-full p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all";
@@ -54,6 +93,17 @@ const CreateInventoryModal = ({ isOpen, onClose, onCreate, isLoading }: CreateIn
         </div>
 
         <form onSubmit={handleSubmit} className="p-8 max-h-[75vh] overflow-y-auto">
+          
+          {errorMsg && (
+            <div className="mb-6 flex items-start gap-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl animate-in fade-in slide-in-from-top-2">
+              <AlertCircle className="text-red-500 shrink-0" size={20} />
+              <div>
+                <h3 className="text-sm font-black text-red-800 dark:text-red-400 uppercase tracking-tight">Provisioning Denied</h3>
+                <p className="text-xs font-bold text-red-700 dark:text-red-300/80 mt-0.5">{errorMsg}</p>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             
             {/* SECTION: GENERAL */}

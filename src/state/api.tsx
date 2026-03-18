@@ -1,7 +1,6 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 
-/* --- INTERFACES (Aligned with schemas.py) --- */
-
+/* --- INTERFACES --- */
 export interface Device {
   id: number;
   device_type: string;
@@ -18,9 +17,9 @@ export interface Device {
   device_status: boolean;
 }
 
-export interface NewDevice extends Omit<Device, 'id'> {}
+// Fixed: Using type instead of interface to avoid the "equivalent to supertype" warning
+export type NewDevice = Omit<Device, 'id'>;
 
-// Matches DcBase & DcUpdate schemas
 export interface DcPurchase {
   id?: number;
   dcpower: number;
@@ -29,20 +28,19 @@ export interface DcPurchase {
   sport: number;
 }
 
-// Matches UserDisplay & UserBase schemas
 export interface User {
   id?: number;
   username: string;
   email: string;
   company_name: string;
-  password?: string;
+  password?: string; 
 }
 
 /* --- BASE API CONFIG --- */
-
 const baseQuery = fetchBaseQuery({
   baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000",
   prepareHeaders: (headers) => {
+    // Check for window to ensure we are on the client side
     const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
     if (token) {
       headers.set("authorization", `Bearer ${token}`);
@@ -57,142 +55,103 @@ export const api = createApi({
   tagTypes: ["Inventory", "User", "Usage"],
   endpoints: (build) => ({
     
-    /* --- AUTHENTICATION --- */
-    
+    /* --- AUTH --- */
     login: build.mutation({
       query: (credentials) => {
         const formData = new URLSearchParams();
         formData.append("username", credentials.username);
         formData.append("password", credentials.password);
-        
         return {
           url: "/token",
           method: "POST",
           body: formData,
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
         };
       },
     }),
 
-    /* --- INVENTORY CRUD OPERATIONS (db_inventory.py) --- */
-
-    getInventory: build.query<Device[], void>({
+    /* --- INVENTORY --- */
+    getInventory: build.query<Device[], void | undefined>({
       query: () => "/inventory/my_details",
       providesTags: ["Inventory"],
     }),
-
     createInventory: build.mutation<Device, NewDevice>({
-      query: (newDevice) => ({
-        url: "/inventory/create",
-        method: "POST",
-        body: newDevice,
+      query: (newDevice) => ({ 
+        url: "/inventory/create", 
+        method: "POST", 
+        body: newDevice 
       }),
       invalidatesTags: ["Inventory"],
     }),
-
     updateInventory: build.mutation<{ message: string }, { id: number; data: Partial<Device> }>({
-      query: ({ id, data }) => ({
-        url: `/inventory/update/?id=${id}`,
-        method: "PUT",
-        body: data,
+      query: ({ id, data }) => ({ 
+        url: `/inventory/update/?id=${id}`, 
+        method: "PUT", 
+        body: data 
       }),
       invalidatesTags: ["Inventory"],
     }),
-
     deleteInventory: build.mutation<{ message: string }, number>({
-      query: (id) => ({
-        url: `/inventory/delete?id=${id}`,
-        method: "DELETE",
+      query: (id) => ({ 
+        url: `/inventory/delete?id=${id}`, 
+        method: "DELETE" 
       }),
       invalidatesTags: ["Inventory"],
     }),
 
-    /* --- USAGE OPERATIONS (db_usage.py) --- */
-
-    // Get purchased limits for dashboard gauges
-    getMyDetails: build.query<DcPurchase, void>({
+    /* --- USAGE --- */
+    getMyDetails: build.query<DcPurchase, void | undefined>({
       query: () => "/usage/my_details",
       providesTags: ["Usage"],
     }),
-
-    // Get live usage/calculated totals
-    getMyCurrentUsage: build.query<any, void>({
-      query: () => "/usage/my_current_usage",
-      providesTags: ["Usage"],
-    }),
-
-    // Get available headroom
-    getAvailableUsage: build.query<any, void>({
-      query: () => "/usage/my_availble_usage",
-      providesTags: ["Usage"],
-    }),
-
     createUsage: build.mutation<DcPurchase, DcPurchase>({
-      query: (newUsage) => ({
-        url: "/usage/create",
-        method: "POST",
-        body: newUsage,
+      query: (newUsage) => ({ 
+        url: "/usage/create", 
+        method: "POST", 
+        body: newUsage 
       }),
       invalidatesTags: ["Usage"],
     }),
-
     updateUsage: build.mutation<DcPurchase, Partial<DcPurchase>>({
-      query: (data) => ({
-        url: "/usage/update",
-        method: "PUT",
-        body: data,
+      query: (data) => ({ 
+        url: "/usage/update", 
+        method: "PUT", 
+        body: data 
       }),
       invalidatesTags: ["Usage"],
     }),
 
-    deleteUsage: build.mutation<{ message: string }, void>({
-      query: () => ({
-        url: "/usage/delete",
-        method: "DELETE",
-      }),
-      invalidatesTags: ["Usage"],
-    }),
-
-    /* --- USER OPERATIONS (db_user.py) --- */
-
-    // Get current logged-in user profile
-    getCurrentUser: build.query<User[], void>({
+    /* --- USER --- */
+    getCurrentUser: build.query<User, void | undefined>({
       query: () => "/user/my_details",
       providesTags: ["User"],
     }),
-
-    // Get all users in the same company
-    getMyTeam: build.query<User[], void>({
+    createUser: build.mutation<User, User>({
+      query: (newUser) => ({ 
+        url: "/user/create", 
+        method: "POST", 
+        body: newUser 
+      }),
+      invalidatesTags: ["User"],
+    }),
+    updateUser: build.mutation<{ message: string }, Partial<User>>({
+      query: (data) => ({ 
+        url: "/user/update", 
+        method: "PUT", 
+        body: data 
+      }),
+      invalidatesTags: ["User"],
+    }),
+    deleteUser: build.mutation<{ message: string }, number | void>({
+      query: (id) => ({ 
+        url: id ? `/user/delete?id=${id}` : "/user/delete", 
+        method: "DELETE" 
+      }),
+      invalidatesTags: ["User"],
+    }),
+    getMyTeam: build.query<User[], void | undefined>({
       query: () => "/user/my_team",
       providesTags: ["User"],
-    }),
-
-    createUser: build.mutation<User, User>({
-      query: (newUser) => ({
-        url: "/user/create",
-        method: "POST",
-        body: newUser,
-      }),
-      invalidatesTags: ["User"],
-    }),
-
-    updateUser: build.mutation<{ message: string }, Partial<User>>({
-      query: (data) => ({
-        url: "/user/update",
-        method: "PUT",
-        body: data,
-      }),
-      invalidatesTags: ["User"],
-    }),
-
-    deleteUser: build.mutation<string, void>({
-      query: () => ({
-        url: "/user/delete",
-        method: "DELETE",
-      }),
-      invalidatesTags: ["User"],
     }),
   }),
 });
@@ -204,14 +163,11 @@ export const {
   useUpdateInventoryMutation,
   useDeleteInventoryMutation,
   useGetMyDetailsQuery,
-  useGetMyCurrentUsageQuery,
-  useGetAvailableUsageQuery,
   useCreateUsageMutation,
   useUpdateUsageMutation,
-  useDeleteUsageMutation,
   useGetCurrentUserQuery,
-  useGetMyTeamQuery,
   useCreateUserMutation,
   useUpdateUserMutation,
-  useDeleteUserMutation
+  useDeleteUserMutation,
+  useGetMyTeamQuery,
 } = api;

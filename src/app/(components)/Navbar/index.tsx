@@ -1,9 +1,8 @@
 "use client";
 import { 
-  Bell, Menu, Moon, Search, Settings, Sun, User, Lock, LogOut, ChevronDown, X, Check, Loader2 
-} from "lucide-react";
+  Menu, Moon, Search, Sun, Lock, LogOut, ChevronDown, Check, Loader2 
+} from "lucide-react"; // REMOVED: Bell
 import React, { useState, useRef, useEffect } from 'react';
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAppDispatch, useAppSelector } from "@/app/redux";
 import { setIsSidebarCollapsed, setIsDarkMode, setSearchTerm } from "@/state"; 
@@ -17,13 +16,11 @@ const Navbar = () => {
   const [newPassword, setNewPassword] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // API Hooks
   const { data: currentUserData } = useGetCurrentUserQuery();
   const { data: inventory = [] } = useGetInventoryQuery();
   const [updateUser, { isLoading: isUpdating }] = useUpdateUserMutation();
   
-  const currentUser = currentUserData?.[0];
-
+const currentUser = Array.isArray(currentUserData) ? currentUserData[0] : currentUserData;
   const isSidebarCollapsed = useAppSelector((state) => state.global.isSidebarCollapsed);
   const isDarkMode = useAppSelector((state) => state.global.isDarkMode);
   const searchTerm = useAppSelector((state) => state.global.searchTerm);
@@ -31,18 +28,13 @@ const Navbar = () => {
   const toggleSidebar = () => dispatch(setIsSidebarCollapsed(!isSidebarCollapsed));
   const toggleDarkMode = () => dispatch(setIsDarkMode(!isDarkMode));
 
-  // Handle Search Submission
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchTerm.trim()) return;
-
-    // Check if the hostname exists in inventory
     const deviceExists = inventory.some(d => 
       d.device_hostname.toLowerCase().includes(searchTerm.toLowerCase())
     );
-
     if (deviceExists) {
-      // Navigate to inventory and pass the search term as a URL param
       router.push(`/Inventory?search=${encodeURIComponent(searchTerm)}`);
     }
   };
@@ -54,7 +46,7 @@ const Navbar = () => {
       setIsPasswordModalOpen(false);
       setNewPassword("");
       alert("Password updated successfully!");
-    } catch (err) {
+    } catch (_err) {
       alert("Failed to update password.");
     }
   };
@@ -71,7 +63,6 @@ const Navbar = () => {
 
   return (
     <div className="flex justify-between items-center w-full mb-7">
-      {/* LEFT SIDE: Sidebar Toggle & Search */}
       <div className="flex justify-between items-center gap-5">
         <button
           className="px-3 py-3 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
@@ -86,7 +77,7 @@ const Navbar = () => {
             placeholder="Search Hostname (Enter to go)"
             value={searchTerm}
             onChange={(e) => dispatch(setSearchTerm(e.target.value))}
-            className="pl-10 pr-4 py-2 w-50 md:w-80 border-2 border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:border-blue-500 transition-all placeholder-gray-500 dark:placeholder-gray-400"
+            className="pl-10 pr-4 py-2 w-50 md:w-80 border-2 border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:border-blue-500 transition-all"
           />
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <Search size={20} className="text-gray-500 dark:text-gray-400" />
@@ -94,17 +85,13 @@ const Navbar = () => {
         </form>
       </div>
 
-      {/* RIGHT SIDE: Actions & Profile */}
       <div className="flex justify-between items-center gap-5">
         <div className="hidden md:flex justify-between items-center gap-5">
           <button onClick={toggleDarkMode} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors">
             {isDarkMode ? <Sun className="text-orange-400" size={24} /> : <Moon className="text-gray-500" size={24} />}
           </button>
           
-          <div className="relative p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors cursor-pointer">
-            <Bell className="text-gray-500 dark:text-gray-400" size={24} />
-            <span className="absolute top-1 right-1 px-1.5 py-0.5 text-[10px] font-bold bg-red-500 text-white rounded-full">3</span>
-          </div>
+          {/* REMOVED: Bell Notification Block */}
 
           <hr className="w-0 h-7 border-l border-gray-300 dark:border-gray-700 mx-3" />
           
@@ -126,7 +113,7 @@ const Navbar = () => {
             </div>
 
             {isProfileMenuOpen && (
-              <div className="absolute right-0 mt-3 w-52 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-[100] py-2 animate-in fade-in zoom-in-95 duration-150 overflow-hidden">
+              <div className="absolute right-0 mt-3 w-52 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-[100] py-2">
                 <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 mb-1">
                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Logged in as</p>
                     <p className="text-xs font-bold dark:text-white truncate">{currentUser?.email}</p>
@@ -134,7 +121,7 @@ const Navbar = () => {
 
                 <button 
                   onClick={() => { setIsPasswordModalOpen(true); setIsProfileMenuOpen(false); }}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-600 transition-colors font-bold"
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-600 font-bold"
                 >
                   <Lock size={16} /> Change Password
                 </button>
@@ -153,7 +140,7 @@ const Navbar = () => {
         </div>
       </div>
 
-      {/* PASSWORD CHANGE MODAL */}
+      {/* PASSWORD CHANGE MODAL (Remains unchanged) */}
       {isPasswordModalOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={() => setIsPasswordModalOpen(false)}></div>
@@ -167,7 +154,7 @@ const Navbar = () => {
                 <input 
                   type="password" 
                   required
-                  className="w-full mt-1 p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full mt-1 p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white font-bold"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                 />

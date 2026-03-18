@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useAppSelector } from "@/app/redux";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { 
   useGetInventoryQuery, 
   useGetMyDetailsQuery, 
@@ -17,8 +17,39 @@ import {
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import CreateInventoryModal from "../(components)/CreateInventoryModal";
 
+// --- TYPES ---
+interface Device {
+  id: number;
+  device_hostname: string;
+  device_model: string;
+  device_serial: string;
+  device_type: string;
+  rack_name: string;
+  rack_unit: string;
+  rack_uspace: number;
+  device_power: number;
+  device_nports: number;
+  device_sports: number;
+  power_status: boolean;
+  device_status: boolean;
+}
+
+interface DcPurchase {
+  uspace: number;
+  dcpower: number;
+  nport: number;
+  sport: number;
+}
+
+interface FetchError {
+  data?: {
+    detail?: string;
+    message?: string;
+  };
+}
+
 // --- ENHANCED GAUGE COMPONENT ---
-const InventoryGauge = ({ title, value, max, color }: any) => {
+const InventoryGauge = ({ title, value, max, color }: { title: string; value: number; max: number; color: string }) => {
   const isDarkMode = useAppSelector((state) => state.global.isDarkMode);
   
   const safeMax = max > 0 ? max : 1;
@@ -65,12 +96,12 @@ const InventoryGauge = ({ title, value, max, color }: any) => {
 };
 
 const Inventory = () => {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const searchTarget = searchParams.get("search") || "";
+  const [syncTime, setSyncTime] = useState<string>("");
   
   // API Hooks
-  const { data: devices = [], isLoading, isFetching, refetch, dataUpdatedAt } = useGetInventoryQuery();
+  const { data: devices = [], isLoading, isFetching, refetch } = useGetInventoryQuery();
   const { data: myDetails, isLoading: isDetailsLoading } = useGetMyDetailsQuery();
   
   const [deleteDevice] = useDeleteInventoryMutation();
@@ -85,30 +116,40 @@ const Inventory = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
+  // Manual Sync Timestamp Logic
+  useEffect(() => {
+    if (!isFetching && !isLoading) {
+      setSyncTime(new Date().toLocaleTimeString());
+    }
+  }, [isFetching, isLoading]);
+
   // Search Logic Integration
-  const filteredInventory = React.useMemo(() => {
-    return devices.filter((device) =>
+  const filteredInventory = useMemo(() => {
+    return (devices as Device[]).filter((device) =>
       device.device_hostname.toLowerCase().includes(searchTarget.toLowerCase()) ||
       device.device_model.toLowerCase().includes(searchTarget.toLowerCase())
     );
   }, [devices, searchTarget]);
 
   // Calculated Resource Totals
-  const totals = {
-    assets: devices.reduce((acc, d) => acc + (d.rack_uspace || 0), 0),
-    power: devices.reduce((acc, d) => acc + (d.device_power || 0), 0),
-    nports: devices.reduce((acc, d) => acc + (d.device_nports || 0), 0),
-    sports: devices.reduce((acc, d) => acc + (d.device_sports || 0), 0),
-  };
+  const totals = useMemo(() => ({
+    assets: (devices as Device[]).reduce((acc, d) => acc + (Number(d.rack_uspace) || 0), 0),
+    power: (devices as Device[]).reduce((acc, d) => acc + (Number(d.device_power) || 0), 0),
+    nports: (devices as Device[]).reduce((acc, d) => acc + (Number(d.device_nports) || 0), 0),
+    sports: (devices as Device[]).reduce((acc, d) => acc + (Number(d.device_sports) || 0), 0),
+  }), [devices]);
 
-  const limits = {
-    assets: myDetails?.uspace || 0,
-    power: myDetails?.dcpower || 0,
-    nports: myDetails?.nport || 0,
-    sports: myDetails?.sport || 0,
-  };
+  const limits = useMemo(() => {
+    const d = myDetails as DcPurchase;
+    return {
+      assets: d?.uspace || 0,
+      power: d?.dcpower || 0,
+      nports: d?.nport || 0,
+      sports: d?.sport || 0,
+    };
+  }, [myDetails]);
 
-  const [editingDevice, setEditingDevice] = useState<any>(null);
+  const [editingDevice, setEditingDevice] = useState<Device | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -118,19 +159,24 @@ const Inventory = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [openMenuId]);
 
-  const handleCreateAsset = async (formData: any) => {
+  // --- CREATE LOGIC ---
+  const handleCreateAsset = async (formData: Partial<Device>) => {
     setErrorMessage(null);
     try {
-      await createDevice({...formData}).unwrap();
+      await createDevice(formData as any).unwrap();
       setIsModalOpen(false);
-    } catch (err: any) {
-      const errorDescription = err?.data?.detail || err?.data?.message || "Check backend connection";
+    } catch (err: unknown) {
+      const fetchErr = err as FetchError;
+      const errorDescription = fetchErr?.data?.detail || fetchErr?.data?.message || "Check backend connection";
       setErrorMessage(`Provisioning Failed: ${errorDescription}`);
+      throw err; 
     }
   };
 
+  // --- UPDATE LOGIC ---
   const handleUpdateAsset = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editingDevice) return;
     setErrorMessage(null);
     try {
       const cleanedData = {
@@ -150,8 +196,9 @@ const Inventory = () => {
       await updateDevice({ id: editingDevice.id, data: cleanedData }).unwrap();
       setIsUpdateModalOpen(false);
       setEditingDevice(null);
-    } catch (err: any) {
-      const errorDescription = err?.data?.detail || err?.data?.message || "Check backend connection";
+    } catch (err: unknown) {
+      const fetchErr = err as FetchError;
+      const errorDescription = fetchErr?.data?.detail || fetchErr?.data?.message || "Check backend connection";
       setErrorMessage(`Update Failed: ${errorDescription}`);
     }
   };
@@ -160,7 +207,7 @@ const Inventory = () => {
     try {
       await deleteDevice(deleteModal.deviceId).unwrap();
       setDeleteModal({ isOpen: false, deviceId: 0, deviceName: "" });
-    } catch (err) {
+    } catch (_err) {
       alert("Failed to delete device.");
     }
   };
@@ -205,7 +252,7 @@ const Inventory = () => {
           <div className="flex items-center gap-1.5 mt-2 text-gray-400 dark:text-gray-500">
             <Clock size={12} className={isFetching ? "animate-pulse text-blue-500" : ""} />
             <span className="text-[10px] font-bold uppercase tracking-widest">
-              {isFetching ? "Syncing..." : dataUpdatedAt > 0 ? `Last Sync: ${new Date(dataUpdatedAt).toLocaleTimeString()}` : "Data Synchronized"}
+              {isFetching ? "Syncing..." : `Last Sync: ${syncTime || "Data Synchronized"}`}
             </span>
           </div>
         </div>
@@ -295,7 +342,6 @@ const Inventory = () => {
         </div>
       </div>
 
-      {/* 5. INTEGRATED CREATE MODAL COMPONENT */}
       <CreateInventoryModal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
@@ -303,13 +349,12 @@ const Inventory = () => {
         isLoading={isCreating}
       />
 
-      {/* 6. UPDATE ASSET MODAL */}
       {isUpdateModalOpen && editingDevice && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-md">
           <div className="relative bg-white dark:bg-gray-800 w-full max-w-4xl rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             <div className="flex justify-between items-center p-6 border-b dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
               <h2 className="text-xl font-black dark:text-white uppercase tracking-tight">Update Asset: {editingDevice.device_hostname}</h2>
-              <button onClick={() => setIsUpdateModalOpen(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full dark:text-gray-400 transition-colors"><X size={24} /></button>
+              <button onClick={() => { setIsUpdateModalOpen(false); setErrorMessage(null); }} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full dark:text-gray-400 transition-colors"><X size={24} /></button>
             </div>
             
             <form onSubmit={handleUpdateAsset} className="p-8 max-h-[75vh] overflow-y-auto">
@@ -415,7 +460,7 @@ const Inventory = () => {
               </div>
 
               <div className="flex gap-4 mt-12">
-                <button type="button" onClick={() => setIsUpdateModalOpen(false)} className="flex-1 py-4 border dark:border-gray-700 rounded-xl font-bold dark:text-gray-300 transition-all hover:bg-gray-50">Discard</button>
+                <button type="button" onClick={() => { setIsUpdateModalOpen(false); setErrorMessage(null); }} className="flex-1 py-4 border dark:border-gray-700 rounded-xl font-bold dark:text-gray-300 transition-all hover:bg-gray-50">Discard</button>
                 <button type="submit" disabled={isUpdating} className="flex-1 py-4 bg-[#3e2723] text-white rounded-xl font-black shadow-xl flex items-center justify-center gap-2 uppercase text-[10px] tracking-widest transition-all hover:opacity-90 disabled:opacity-50">
                   {isUpdating ? <Loader2 className="animate-spin" size={20} /> : <><Save size={20} /> Save Asset Changes</>}
                 </button>

@@ -5,15 +5,33 @@ import { useAppSelector } from "@/app/redux";
 import { 
   useGetInventoryQuery, 
   useGetMyDetailsQuery,
-  useUpdateUsageMutation // Corrected to use the hook from your api.tsx
+  useUpdateUsageMutation,
+  useCreateUsageMutation 
 } from "@/state/api";
 import { 
   RefreshCw, ShoppingCart, Zap, Network, Box, 
-  HardDrive, AlertTriangle, ChevronLeft, Loader2, ArrowUpRight, Clock, CheckCircle2, Save
+  HardDrive, ChevronLeft, Loader2, ArrowUpRight, Clock, Save
 } from "lucide-react";
 import { ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
-// --- GAUGE COMPONENT ---
+// --- TYPES ---
+interface Device {
+  id: number;
+  device_hostname: string;
+  device_model: string;
+  device_power: number;
+  device_nports: number;
+  device_sports: number;
+  rack_uspace: number | string;
+}
+
+interface FetchError {
+  status?: number;
+  data?: {
+    detail?: string;
+  };
+}
+
 const ResourceGauge = ({ label, value, total, color }: { label: string; value: number; total: number; color: string }) => {
   const isDarkMode = useAppSelector((state) => state.global.isDarkMode);
   const safeTotal = total > 0 ? total : 1;
@@ -21,33 +39,21 @@ const ResourceGauge = ({ label, value, total, color }: { label: string; value: n
   const data = [{ value: value }, { value: Math.max(0, safeTotal - value) }];
 
   return (
-    <div className="flex flex-col items-center bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 w-full transition-all">
+    <div className="flex flex-col items-center bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 w-full">
       <div className="h-32 w-full relative">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
-            <Pie
-              data={data}
-              cx="50%"
-              cy="100%"
-              startAngle={180}
-              endAngle={0}
-              innerRadius="70%"
-              outerRadius="100%"
-              dataKey="value"
-              stroke="none"
-            >
+            <Pie data={data} cx="50%" cy="100%" startAngle={180} endAngle={0} innerRadius="70%" outerRadius="100%" dataKey="value" stroke="none">
               <Cell fill={percentage > 90 ? "#EF4444" : color} />
               <Cell fill={isDarkMode ? "#374151" : "#e5e7eb"} />
             </Pie>
           </PieChart>
         </ResponsiveContainer>
         <div className="absolute inset-0 flex items-end justify-center pb-2">
-          <span className={`text-2xl font-black ${percentage > 90 ? 'text-red-500' : 'dark:text-white'}`}>
-            {percentage}%
-          </span>
+          <span className={`text-2xl font-black ${percentage > 90 ? 'text-red-500' : 'dark:text-white'}`}>{percentage}%</span>
         </div>
       </div>
-      <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 mt-4 uppercase tracking-widest text-center">{label}</p>
+      <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 mt-4 uppercase tracking-widest">{label}</p>
       <p className="text-sm font-black dark:text-gray-200 mt-1">{value.toLocaleString()} / {total.toLocaleString()}</p>
     </div>
   );
@@ -55,30 +61,30 @@ const ResourceGauge = ({ label, value, total, color }: { label: string; value: n
 
 export default function ResourcesPage() {
   const [currentView, setCurrentView] = useState<"dashboard" | "purchase">("dashboard");
-  const [formData, setFormData] = useState({ dcpower: 0, nport: 0, uspace: 0, sport: 0 });
+  const [formData, setFormData] = useState({ dcpower: 1, nport: 1, uspace: 1, sport: 1 });
   const [syncTime, setSyncTime] = useState<string>("");
 
-  const { data: devices = [], isLoading: isInvLoading, isFetching: isInvFetching, refetch: refetchInv, dataUpdatedAt: invUpdatedAt } = useGetInventoryQuery();
-  const { data: myDetails, isLoading: isDetLoading, isFetching: isDetFetching, refetch: refetchDetails, dataUpdatedAt: detUpdatedAt } = useGetMyDetailsQuery();
+  // RTK Query hooks - using fulfilledTimeStamp if dataUpdatedAt is missing in your specific type definition
+  const { data: devices = [], isLoading: isInvLoading, isFetching: isInvFetching, refetch: refetchInv, fulfilledTimeStamp: invTimestamp } = useGetInventoryQuery();
+  const { data: myDetails, isLoading: isDetLoading, isFetching: isDetFetching, refetch: refetchDetails, error: detailsError, fulfilledTimeStamp: detTimestamp } = useGetMyDetailsQuery();
   
-  // Using the exact mutation from your api.tsx
   const [updateUsage, { isLoading: isUpdating }] = useUpdateUsageMutation();
+  const [createUsage, { isLoading: isCreating }] = useCreateUsageMutation();
 
   const isRefreshing = isInvFetching || isDetFetching;
-  const hasData = devices.length > 0 || myDetails;
+  const isActionLoading = isUpdating || isCreating;
 
   useEffect(() => {
-    const latest = Math.max(invUpdatedAt || 0, detUpdatedAt || 0);
+    const latest = Math.max(invTimestamp || 0, detTimestamp || 0);
     if (latest > 0) setSyncTime(new Date(latest).toLocaleTimeString());
-    else if (hasData && !isRefreshing) setSyncTime(new Date().toLocaleTimeString());
-  }, [invUpdatedAt, detUpdatedAt, hasData, isRefreshing]);
+  }, [invTimestamp, detTimestamp]);
 
   const metrics = useMemo(() => ({
     consumed: {
-      power: devices.reduce((acc, d) => acc + (d.device_power || 0), 0),
-      nport: devices.reduce((acc, d) => acc + (d.device_nports || 0), 0),
-      sport: devices.reduce((acc, d) => acc + (d.device_sports || 0), 0),
-      uspace: devices.reduce((acc, d) => acc + (parseInt(d.rack_uspace.toString()) || 0), 0),
+      power: devices.reduce((acc: number, d: Device) => acc + (d.device_power || 0), 0),
+      nport: devices.reduce((acc: number, d: Device) => acc + (d.device_nports || 0), 0),
+      sport: devices.reduce((acc: number, d: Device) => acc + (d.device_sports || 0), 0),
+      uspace: devices.reduce((acc: number, d: Device) => acc + (parseInt(d.rack_uspace?.toString() || "0")), 0),
     },
     purchased: {
       power: myDetails?.dcpower || 0,
@@ -90,17 +96,23 @@ export default function ResourcesPage() {
 
   const handleConfirmPurchase = async () => {
     try {
-      // Logic: Final payload matches DcUpdate schema (Optional fields)
-      const updatedPayload = {
-        dcpower: metrics.purchased.power + formData.dcpower,
-        nport: metrics.purchased.nport + formData.nport,
-        uspace: metrics.purchased.uspace + formData.uspace,
-        sport: metrics.purchased.sport + formData.sport,
+      const errorData = detailsError as FetchError;
+      const isNewUser = !myDetails || errorData?.status === 404;
+
+      const payload = {
+        dcpower: Math.max(1, metrics.purchased.power + formData.dcpower),
+        nport: Math.max(1, metrics.purchased.nport + formData.nport),
+        uspace: Math.max(1, metrics.purchased.uspace + formData.uspace),
+        sport: Math.max(1, metrics.purchased.sport + formData.sport),
       };
 
-      await updateUsage(updatedPayload).unwrap();
+      if (isNewUser) {
+        await createUsage(payload).unwrap();
+      } else {
+        await updateUsage(payload).unwrap();
+      }
       
-      setFormData({ dcpower: 0, nport: 0, uspace: 0, sport: 0 });
+      setFormData({ dcpower: 1, nport: 1, uspace: 1, sport: 1 });
       setCurrentView("dashboard");
       refetchDetails();
     } catch (error) {
@@ -109,36 +121,34 @@ export default function ResourcesPage() {
   };
 
   const topConsumers = useMemo(() => {
-    return [...devices].sort((a, b) => (b.device_power || 0) - (a.device_power || 0)).slice(0, 5);
+    return ([...devices] as Device[]).sort((a, b) => (b.device_power || 0) - (a.device_power || 0)).slice(0, 5);
   }, [devices]);
-
-  const powerLoadPercentage = Math.round((metrics.consumed.power / (metrics.purchased.power || 1)) * 100);
 
   if (isInvLoading || isDetLoading) return (
     <div className="flex flex-col items-center justify-center h-screen gap-4">
       <Loader2 className="animate-spin text-blue-600" size={32} />
-      <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Initial Sync...</h2>
+      <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Syncing Infrastructure...</h2>
     </div>
   );
 
   if (currentView === "purchase") {
     return (
-      <div className="flex flex-col gap-6 pb-20 animate-in fade-in slide-in-from-bottom-4 duration-300">
+      <div className="flex flex-col gap-6 pb-20 animate-in fade-in slide-in-from-bottom-4">
         <div className="flex items-center justify-between bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm">
           <div className="flex items-center gap-4">
             <button onClick={() => setCurrentView("dashboard")} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full dark:text-white transition-colors">
               <ChevronLeft size={24} />
             </button>
-            <h1 className="text-2xl font-black dark:text-white uppercase tracking-tight">Configure Procurement</h1>
+            <h1 className="text-2xl font-black dark:text-white uppercase tracking-tight">Resource Procurement</h1>
           </div>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-8 rounded-3xl border border-gray-200 dark:border-gray-700 shadow-sm space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <ProcurementInput label="Add Power (Watts)" icon={<Zap className="text-orange-500" size={16} />} onChange={(v) => setFormData(p => ({ ...p, dcpower: v }))} />
-              <ProcurementInput label="Add Network Ports" icon={<Network className="text-blue-500" size={16} />} onChange={(v) => setFormData(p => ({ ...p, nport: v }))} />
-              <ProcurementInput label="Add Rack Space (U)" icon={<Box className="text-emerald-500" size={16} />} onChange={(v) => setFormData(p => ({ ...p, uspace: v }))} />
-              <ProcurementInput label="Add SAN Ports" icon={<HardDrive className="text-purple-500" size={16} />} onChange={(v) => setFormData(p => ({ ...p, sport: v }))} />
+              <ProcurementInput label="Power (Watts)" value={formData.dcpower} icon={<Zap className="text-orange-500" size={16} />} onChange={(v) => setFormData(p => ({ ...p, dcpower: v }))} />
+              <ProcurementInput label="Network Ports" value={formData.nport} icon={<Network className="text-blue-500" size={16} />} onChange={(v) => setFormData(p => ({ ...p, nport: v }))} />
+              <ProcurementInput label="Rack Units (U)" value={formData.uspace} icon={<Box className="text-emerald-500" size={16} />} onChange={(v) => setFormData(p => ({ ...p, uspace: v }))} />
+              <ProcurementInput label="SAN Ports" value={formData.sport} icon={<HardDrive className="text-purple-500" size={16} />} onChange={(v) => setFormData(p => ({ ...p, sport: v }))} />
             </div>
           </div>
           <div className="bg-gray-900 rounded-3xl p-8 text-white shadow-2xl flex flex-col justify-between border border-gray-800">
@@ -150,13 +160,9 @@ export default function ResourcesPage() {
                 <SummaryRow label="Projected Rack" value={`${metrics.purchased.uspace + formData.uspace} U`} />
               </div>
             </div>
-            <button 
-              onClick={handleConfirmPurchase}
-              disabled={isUpdating}
-              className="mt-12 w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-2xl font-black uppercase text-xs tracking-widest active:scale-95 transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
-            >
-              {isUpdating ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-              Confirm Contract Update
+            <button onClick={handleConfirmPurchase} disabled={isActionLoading} className="mt-12 w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-2xl font-black uppercase text-xs tracking-widest transition-all shadow-lg flex items-center justify-center gap-2">
+              {isActionLoading ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+              Confirm Allocation
             </button>
           </div>
         </div>
@@ -165,30 +171,20 @@ export default function ResourcesPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 pb-20 animate-in fade-in duration-500">
+    <div className="flex flex-col gap-6 pb-20 animate-in fade-in">
       <div className="flex items-center justify-between bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-black dark:text-white tracking-tight uppercase leading-none">Resource Center</h1>
-          <div className="flex items-center gap-3 mt-1">
-            <div className="flex items-center gap-1.5">
-              <Clock size={12} className={isRefreshing ? "animate-pulse text-blue-500" : "text-gray-400"} />
-              <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">
-                Last Refreshed: {syncTime || "Syncing..."}
-              </span>
-            </div>
-            {syncTime && !isRefreshing && (
-              <div className="flex items-center gap-1 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded text-[8px] font-black text-green-600 dark:text-green-400 uppercase tracking-tighter">
-                <CheckCircle2 size={10} />
-                DATA SYNCED
-              </div>
-            )}
+          <h1 className="text-2xl font-black dark:text-white uppercase tracking-tight">Resource Center</h1>
+          <div className="flex items-center gap-1.5">
+            <Clock size={12} className={isRefreshing ? "animate-pulse text-blue-500" : "text-gray-400"} />
+            <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Last Refreshed: {syncTime || "Syncing..."}</span>
           </div>
         </div>
         <div className="flex gap-3">
-          <button onClick={() => { refetchInv(); refetchDetails(); }} disabled={isRefreshing} className="flex items-center gap-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-white px-4 py-3 rounded-xl font-black uppercase text-xs tracking-widest transition-all disabled:opacity-50">
+          <button onClick={() => { refetchInv(); refetchDetails(); }} disabled={isRefreshing} className="flex items-center gap-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-white px-4 py-3 rounded-xl font-black uppercase text-xs tracking-widest disabled:opacity-50 transition-all">
             <RefreshCw size={16} className={isRefreshing ? "animate-spin" : ""} /> Sync
           </button>
-          <button onClick={() => setCurrentView("purchase")} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-black shadow-lg uppercase text-xs tracking-widest active:scale-95 transition-all">
+          <button onClick={() => setCurrentView("purchase")} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-black shadow-lg uppercase text-xs tracking-widest transition-all active:scale-95">
             <ShoppingCart size={18} /> Purchase
           </button>
         </div>
@@ -201,13 +197,9 @@ export default function ResourcesPage() {
         <ResourceGauge label="Rack Capacity" value={metrics.consumed.uspace} total={metrics.purchased.uspace} color="#10B981" />
       </div>
 
-      {/* TOP CONSUMER TABLE */}
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl p-8 shadow-sm">
         <div className="flex items-center justify-between mb-8">
-          <div>
-            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">High Consumption Assets</h4>
-            <p className="text-[9px] text-blue-500 font-black uppercase mt-1">Ranking by peak power draw</p>
-          </div>
+          <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Top Consumption Assets</h4>
           <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-500"><ArrowUpRight size={20} /></div>
         </div>
         <div className="w-full overflow-hidden">
@@ -215,15 +207,15 @@ export default function ResourcesPage() {
             <thead>
               <tr className="border-b-2 border-gray-50 dark:border-gray-700 text-left">
                 <th className="pb-4 text-[10px] font-black text-gray-400 uppercase w-12">#</th>
-                <th className="pb-4 text-[10px] font-black text-gray-400 uppercase min-w-[200px]">Asset Identifier</th>
-                <th className="pb-4 text-[10px] font-black text-gray-400 uppercase text-center w-32">Power</th>
-                <th className="pb-4 text-[10px] font-black text-gray-400 uppercase text-center w-32">Ports</th>
-                <th className="pb-4 text-[10px] font-black text-gray-400 uppercase text-right w-32">U-Space</th>
+                <th className="pb-4 text-[10px] font-black text-gray-400 uppercase">Asset</th>
+                <th className="pb-4 text-[10px] font-black text-gray-400 uppercase text-center">Power</th>
+                <th className="pb-4 text-[10px] font-black text-gray-400 uppercase text-center">Ports</th>
+                <th className="pb-4 text-[10px] font-black text-gray-400 uppercase text-right">U-Space</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
               {topConsumers.map((device, idx) => (
-                <tr key={device.id} className="group transition-all hover:bg-gray-50/80 dark:hover:bg-gray-700/30">
+                <tr key={device.id} className="group hover:bg-gray-50/80 dark:hover:bg-gray-700/30 transition-all">
                   <td className="py-5 text-[10px] font-black text-gray-300">{(idx + 1).toString().padStart(2, '0')}</td>
                   <td className="py-5">
                     <div className="flex flex-col">
@@ -234,8 +226,8 @@ export default function ResourcesPage() {
                   <td className="py-5 text-center">
                     <span className="px-3 py-1 rounded-lg bg-red-50 dark:bg-red-900/10 text-red-600 text-xs font-black">{device.device_power}W</span>
                   </td>
-                  <td className="py-5 text-center text-sm font-black dark:text-gray-200">{device.device_nports} <span className="text-[9px] text-gray-400 font-bold ml-1">NET</span></td>
-                  <td className="py-5 text-right text-sm font-black dark:text-gray-200">{device.rack_uspace} <span className="text-[9px] text-gray-400 font-bold ml-1 italic">UNITS</span></td>
+                  <td className="py-5 text-center text-sm font-black dark:text-gray-200">{device.device_nports} <span className="text-[9px] text-gray-400 font-bold">NET</span></td>
+                  <td className="py-5 text-right text-sm font-black dark:text-gray-200">{device.rack_uspace} <span className="text-[9px] text-gray-400 font-bold italic">UNITS</span></td>
                 </tr>
               ))}
             </tbody>
@@ -246,10 +238,10 @@ export default function ResourcesPage() {
   );
 }
 
-const ProcurementInput = ({ label, icon, onChange }: { label: string; icon: React.ReactNode; onChange: (v: number) => void }) => (
+const ProcurementInput = ({ label, value, icon, onChange }: { label: string; value: number; icon: React.ReactNode; onChange: (v: number) => void }) => (
   <div className="space-y-3">
     <label className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2">{icon} {label}</label>
-    <input type="number" onChange={(e) => onChange(Number(e.target.value))} className="w-full p-5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white font-black text-lg outline-none focus:ring-4 focus:ring-blue-500/10 transition-all" placeholder="0" />
+    <input type="number" min="1" value={value} onChange={(e) => onChange(Math.max(1, Number(e.target.value) || 1))} className="w-full p-5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white font-black text-lg outline-none focus:ring-4 focus:ring-blue-500/10 transition-all" />
   </div>
 );
 

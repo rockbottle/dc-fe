@@ -1,65 +1,82 @@
 "use client";
 
-import React, { useEffect } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import React, { useEffect, useState } from "react";
 import Navbar from "@/app/(components)/Navbar";
 import Sidebar from "@/app/(components)/Sidebar";
-import StoreProvider, { useAppSelector } from "./redux";
+import StoreProvider, { useAppSelector } from "@/app/redux";
+import { usePathname, useRouter } from "next/navigation"; 
+import { 
+  useGetInventoryQuery, 
+  useGetMyDetailsQuery 
+} from "@/state/api";
 
 const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
   const pathname = usePathname();
   const router = useRouter();
+  const [isAuthChecked, setIsAuthChecked] = useState(false);
+
   const isSidebarCollapsed = useAppSelector((state) => state.global.isSidebarCollapsed);
   const isDarkMode = useAppSelector((state) => state.global.isDarkMode);
 
-  // Define which paths should not show the sidebar or navbar
-  const normalizedPath = pathname.toLowerCase();
-  const isAuthPage = normalizedPath === "/login" || normalizedPath === "/signup";
+  const isAuthPage = pathname === "/Login" || pathname === "/login";
 
-  // 1. Handle Dark Mode Toggle
+  // --- AUTH GUARD LOGIC ---
+  useEffect(() => {
+    const token = localStorage.getItem("auth_token");
+
+    if (!token && !isAuthPage) {
+      // If no token and trying to access a protected page, redirect to Login
+      router.push("/Login");
+    } else {
+      // Allow rendering once we've checked the token
+      setIsAuthChecked(true);
+    }
+  }, [pathname, isAuthPage, router]);
+
+  // Data fetching (only runs if authenticated AND not on login page)
+  const { isFetching: isInvFetching } = useGetInventoryQuery(undefined, { 
+    skip: isAuthPage || !isAuthChecked 
+  });
+  const { isFetching: isDetFetching } = useGetMyDetailsQuery(undefined, { 
+    skip: isAuthPage || !isAuthChecked 
+  });
+
+  const isGlobalLoading = isInvFetching || isDetFetching;
+
   useEffect(() => {
     if (isDarkMode) {
       document.documentElement.classList.add("dark");
-      document.documentElement.classList.remove("light");
     } else {
-      document.documentElement.classList.add("light");
       document.documentElement.classList.remove("dark");
     }
   }, [isDarkMode]);
 
-  // 2. Protect Routes: Redirect to login if no token is found
-  useEffect(() => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
-    if (!token && !isAuthPage) {
-      router.push("/Login");
-    }
-  }, [isAuthPage, router]);
+  // 1. Prevent "Flicker": Don't show anything until we know the auth status
+  if (!isAuthChecked && !isAuthPage) {
+    return <div className="h-screen w-screen bg-gray-50 dark:bg-dark-bg" />; 
+  }
 
-  // 3. Render for Auth Pages (Login/Signup)
-  // This return happens BEFORE the Sidebar/Navbar code, ensuring they are hidden.
+  // 2. Clean return for Login page
   if (isAuthPage) {
     return (
-      <div className="w-full min-h-screen bg-gray-50 dark:bg-[#080b12] text-gray-900 dark:text-white transition-colors duration-300">
+      <div className={`${isDarkMode ? "dark" : "light"} w-full min-h-screen bg-gray-50 dark:bg-dark-bg`}>
         {children}
       </div>
     );
   }
 
-  // 4. Render for Main Application (Dashboard/Inventory/etc.)
+  // 3. Protected Dashboard Layout
   return (
-    <div
-      className={`${
-        isDarkMode ? "dark" : "light"
-      } flex bg-gray-200 dark:bg-[#080b12] text-gray-900 dark:text-gray-100 w-full min-h-screen transition-colors duration-300`}
-    >
+    <div className={`${isDarkMode ? "dark" : "light"} flex bg-gray-50 text-gray-900 w-full min-h-screen`}>
       <Sidebar />
-      <main
-        className={`flex flex-col w-full py-7 px-9 bg-transparent transition-all duration-300 ${
-          isSidebarCollapsed ? "md:pl-24" : "md:pl-72"
-        }`}
-      >
+      <main className={`flex flex-col w-full h-full py-7 px-9 bg-gray-50 dark:bg-dark-bg ${isSidebarCollapsed ? "md:pl-24" : "md:pl-72"}`}>
         <Navbar />
-        <div className="flex-1 w-full">
+        {isGlobalLoading && (
+          <div className="fixed top-0 left-0 w-full h-1 bg-blue-500/20 z-[9999]">
+            <div className="h-full bg-blue-600 animate-pulse w-1/3" />
+          </div>
+        )}
+        <div className="mt-4">
           {children}
         </div>
       </main>
